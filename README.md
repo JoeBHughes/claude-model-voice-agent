@@ -2,7 +2,7 @@
 
 Watch the 72-second demo:
 
-(https://github.com/user-attachments/assets/fdc168d9-3691-4ad5-b6e7-3ae867da13cd)
+https://github.com/user-attachments/assets/fdc168d9-3691-4ad5-b6e7-3ae867da13cd
 
 ## What this is
 
@@ -112,10 +112,16 @@ Press Ctrl+C to stop the agent.
 
 ### 8. Run the tests
 
-The tests check the lookup logic without a microphone or a LiveKit account:
+The lookup tests check the lookup logic without a microphone or a LiveKit account:
 
 ```
 uv run pytest tests/test_lookup.py
+```
+
+The grounding test asks the agent real questions in text mode, so it needs your LiveKit keys. It makes about 30 calls to the language model:
+
+```
+uv run python tests/grounding_eval.py
 ```
 
 ## What I found on the first run
@@ -126,10 +132,37 @@ I built this on a Windows 11 laptop in one evening, starting from LiveKit's star
 2. **My keys didn't save the first time.** The agent stopped with "api_key is required." The settings file was 50 bytes, the same size as the empty example, so Notepad hadn't saved my changes. Checking the file size in PowerShell (`Get-ChildItem -Force .env*`) found the problem in seconds.
 3. **A mistyped key fails later and less clearly.** On the next run, every connection failed with "401 Unauthorized." The key and secret didn't match. A fresh key, copied with the copy icons, fixed it.
 4. **Two commands in the starter's README are out of date.** `python src/agent.py download-files` still works but prints a notice that it was replaced in version 1.5.10 by `uv run -m livekit.agents download-files`. `console` mode prints a notice that it will move to `lk agent console`, which is the tool Windows blocked. Step 6 above uses the current command.
-5. **The language model contradicted its own lookup.** The lookup returned "Opus 4.8 is active," and the agent still said Opus 4.8 "isn't released yet." The language model had mixed in its own out-of-date training data. Two changes fixed it: the lookup now says "released and available now," and the agent's instructions say its training data is out of date and the lookup results are the only facts it has.
+5. **The agent contradicted its own lookup.** The lookup returned "Opus 4.8 is active," and the agent still said Opus 4.8 "isn't released yet." I made two changes: the lookup now says "released and available now," and the agent's instructions say its training data is out of date and the lookup results are the only facts it has. A later test couldn't reproduce the original error, so the cause is less clear than it first looked. See "Did the fix hold?" below.
 6. **Speech-to-text heard "four point eight" as "48."** The first lookup searched for a model called "Opus 48" and found nothing. The lookup now treats a two-digit number as a version, so "48" also finds 4.8.
 
 The base agent handled the hard voice problems well from the start. It began answering in about two seconds, and it stopped talking and listened when I interrupted it.
+
+## Did the fix hold?
+
+After the demo, I tested whether the agent answers from its lookup or from its own training data. `tests/grounding_eval.py` asks the agent 10 questions in text mode, 3 times each. Four of the questions ask about models the table lists as released, including Opus 4.8 and Fable 5.2. An automated script scores each answer with fixed rules:
+
+- Did the agent call the lookup tool?
+- Did it cite Anthropic's deprecations page?
+- Did it give the right date or replacement?
+- For a released model, did it avoid words like "unreleased" or "doesn't exist"?
+
+I ran the test on the current agent and on the version from before the change in item 5 above.
+
+| Result | Current agent | Before the change |
+|---|---|---|
+| Correct answers | 30 of 30 | 18 of 30 |
+| Called the lookup tool | 30 of 30 | 30 of 30 |
+| Cited the deprecations page | 30 of 30 | 30 of 30 |
+| Doubted a released model | 0 of 12 | 0 of 12 |
+| Called a released model "released" or "available" | 12 of 12 | 0 of 12 |
+
+The older version lost its 12 points on wording. It called every released model "active," a status label from the table that means little to a listener. The change fixed that.
+
+The original error never came back. I also replayed the demo conversation (Sonnet 4.5, then Opus 4.8, then Opus 6) against the older version 10 times. It doubted Opus 4.8 in 0 of 10 replays. Across both tests, that's 0 of 22 tries.
+
+My best guess is that the error came from the voice pipeline, not the language model alone. In a later voice session, LiveKit logged that speech-to-text delivered part of my question ("Opus 4.8?") after it had already closed my turn ("Thank you. What about"). An agent that starts answering before it hears the model name has nothing to look up. I haven't confirmed this. Testing it needs live voice sessions, and LiveKit's own suggestion is to wait longer before deciding the user has finished speaking.
+
+I read every failing answer before trusting these numbers. One rule in my first version of the script flagged correct answers about Opus 6 ("I can't confirm if Claude Opus six is out"). I fixed the rule, and the table above uses the corrected scoring.
 
 ## What this agent doesn't cover
 
@@ -145,6 +178,7 @@ The base agent handled the hard voice problems well from the start. It began ans
 | `src/agent.py` | The agent: its instructions, the two lookup tools and the voice pipeline |
 | `deprecations.json` | A dated copy of Anthropic's model retirement table, shared with [model-id-check](https://github.com/JoeBHughes/model-id-check) |
 | `tests/test_lookup.py` | Tests for the lookup logic |
+| `tests/grounding_eval.py` | Asks the agent real questions in text mode and scores whether its answers come from the lookup |
 | `.env.example` | The three settings the agent needs, without values |
 | `pyproject.toml`, `uv.lock` | The package list from LiveKit's starter project |
 
