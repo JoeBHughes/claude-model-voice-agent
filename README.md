@@ -2,7 +2,7 @@
 
 Watch the 72-second demo:
 
-https://github.com/user-attachments/assets/fdc168d9-3691-4ad5-b6e7-3ae867da13cd
+https://github.com/user-attachments/assets/574bdbcd-0e86-429c-9132-0762d17bde3c
 
 ## What this is
 
